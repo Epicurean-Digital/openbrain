@@ -111,9 +111,7 @@ Add to `plugins.entries` in `openclaw.json`:
     "personalTerms": ["your-project", "your-name"],
 
     "curationDebounceMinutes": 10,
-    "hotCacheSize": 25,
-
-    "costWebhook": "http://localhost:4000/api/log"
+    "hotCacheSize": 25
   }
 }
 ```
