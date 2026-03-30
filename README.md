@@ -100,11 +100,11 @@ Add to `plugins.entries` in `openclaw.json`:
     "workspace": "/home/yourname/.openclaw/workspace",
 
     "curator": {
-      "model": "deepseek-reasoner",
-      "provider": "deepseek"
+      "model": "your-model-id",
+      "provider": "anthropic"
     },
     "eval": {
-      "model": "claude-haiku-4-5-20251001",
+      "model": "your-model-id",
       "provider": "anthropic"
     },
 
@@ -121,9 +121,9 @@ Add to `plugins.entries` in `openclaw.json`:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `workspace` | `~/.openclaw/workspace` | Root directory for all memory files |
-| `curator.model` | `claude-sonnet-4-6` | Model used for curation (R1 recommended) |
+| `curator.model` | `claude-sonnet-4-6` | Model used for curation — any capable model; reasoning models recommended |
 | `curator.provider` | `anthropic` | `anthropic` or `deepseek` |
-| `eval.model` | `claude-haiku-4-5-20251001` | Model used for self-eval |
+| `eval.model` | `claude-haiku-4-5-20251001` | Model used for self-eval — a fast, cheap model is ideal |
 | `eval.provider` | `anthropic` | `anthropic` or `deepseek` |
 | `personalTerms` | `[]` | Terms that trigger personal/episodic retrieval — add your project names, people, etc. |
 | `curationDebounceMinutes` | `10` | Minutes of inactivity before curation fires |
