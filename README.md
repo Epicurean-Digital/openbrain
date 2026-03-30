@@ -101,11 +101,11 @@ Add to `plugins.entries` in `openclaw.json`:
 
     "curator": {
       "model": "your-model-id",
-      "provider": "anthropic"
+      "provider": "your-provider"
     },
     "eval": {
       "model": "your-model-id",
-      "provider": "anthropic"
+      "provider": "your-provider"
     },
 
     "personalTerms": ["your-project", "your-name"],
@@ -122,9 +122,9 @@ Add to `plugins.entries` in `openclaw.json`:
 |-----|---------|-------------|
 | `workspace` | `~/.openclaw/workspace` | Root directory for all memory files |
 | `curator.model` | `claude-sonnet-4-6` | Model used for curation — any capable model; reasoning models recommended |
-| `curator.provider` | `anthropic` | `anthropic` or `deepseek` |
+| `curator.provider` | `anthropic` | Any provider configured in OpenClaw |
 | `eval.model` | `claude-haiku-4-5-20251001` | Model used for self-eval — a fast, cheap model is ideal |
-| `eval.provider` | `anthropic` | `anthropic` or `deepseek` |
+| `eval.provider` | `anthropic` | Any provider configured in OpenClaw |
 | `personalTerms` | `[]` | Terms that trigger personal/episodic retrieval — add your project names, people, etc. |
 | `curationDebounceMinutes` | `10` | Minutes of inactivity before curation fires |
 | `hotCacheSize` | `25` | Number of entries in HOT_CACHE.md |
