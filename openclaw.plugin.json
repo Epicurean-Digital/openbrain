@@ -1,0 +1,28 @@
+{
+  "id": "openbrain",
+  "name": "OpenBrain",
+  "version": "0.1.0",
+  "description": "Persistent memory, cross-session pattern learning, and context retrieval for OpenClaw agents",
+  "kind": "context-engine",
+  "main": "index.js",
+  "configSchema": {
+    "curator": {
+      "type": "object",
+      "properties": {
+        "model":    { "type": "string" },
+        "provider": { "type": "string" }
+      }
+    },
+    "eval": {
+      "type": "object",
+      "properties": {
+        "model":    { "type": "string" },
+        "provider": { "type": "string" }
+      }
+    },
+    "workspace":                 { "type": "string" },
+    "costWebhook":               { "type": "string" },
+    "curationDebounceMinutes":   { "type": "number" },
+    "hotCacheSize":              { "type": "number" }
+  }
+}

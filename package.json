@@ -1,0 +1,7 @@
+{
+  "name": "openbrain",
+  "version": "0.1.0",
+  "description": "Persistent memory, pattern learning, and context retrieval for OpenClaw agents",
+  "type": "module",
+  "main": "index.js"
+}
