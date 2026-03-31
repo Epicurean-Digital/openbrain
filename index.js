@@ -242,8 +242,13 @@ export default function openBrainPlugin(api) {
     ...(DEEPSEEK_KEY  ? { DEEPSEEK_API_KEY:  DEEPSEEK_KEY  } : {}),
   });
 
-  // Per-session debounce state
+  // Per-session debounce state (main agent only)
   const pendingCurations = new Map();
+
+  // Detect sub-agent sessions by session key format: agent:<id>:subagent:<uuid>
+  function isSubagentSession(sessionId) {
+    return typeof sessionId === "string" && sessionId.includes("subagent");
+  }
 
   // ── Cost logging ──────────────────────────────────────────────────────────────
   async function logCostToWebhook(event) {
@@ -372,6 +377,27 @@ export default function openBrainPlugin(api) {
     }
   });
 
+  // ── Immediate curation (sub-agents) ──────────────────────────────────────────
+  function curateNow(sessionId, messages) {
+    const transcript = formatTranscript(messages);
+    if (!transcript || transcript.length < 1000) return;
+
+    api.logger?.info(`[openbrain] subagent ${sessionId.slice(0, 16)} ended — curating immediately`);
+
+    const child = spawn("node", [CURATOR_SCRIPT], { env: childEnv() });
+    let stdout = "";
+    child.stdout.on("data", d => { stdout += d; });
+    child.stderr.on("data", d => api.logger?.warn(`[openbrain] curator: ${d.toString().trim()}`));
+    child.on("close", code => {
+      const last = stdout.trim().split("\n").pop() || "";
+      api.logger?.info(`[openbrain] curation done (exit ${code}): ${last}`);
+    });
+    child.on("error", e => api.logger?.warn(`[openbrain] curator spawn error: ${e.message}`));
+
+    child.stdin.write(transcript);
+    child.stdin.end();
+  }
+
   // ── Hook: agent_end — cost log + eval + curation ──────────────────────────────
   api.on("agent_end", async (event) => {
     // Cost logging
@@ -379,11 +405,17 @@ export default function openBrainPlugin(api) {
       api.logger?.warn(`[openbrain] cost-log failed: ${err.message}`)
     );
 
-    // Schedule curation after inactivity
     const sessionId = event.sessionId || event.session_id || "default";
-    scheduleCuration(sessionId, event.messages || []);
+    const subagent  = isSubagentSession(sessionId);
 
-    // Self-eval
+    // Curation — immediate for sub-agents, debounced for main agent
+    if (subagent) {
+      curateNow(sessionId, event.messages || []);
+    } else {
+      scheduleCuration(sessionId, event.messages || []);
+    }
+
+    // Self-eval — runs for all agents (collective quality signal)
     const exchange = extractExchange(event.messages);
     if (!exchange || exchange.response.length < MIN_CHARS) return;
 
