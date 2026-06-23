@@ -8,12 +8,15 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join }     from "node:path";
+import { homedir }  from "node:os";
 
 const WORKSPACE  = process.env.OPENBRAIN_WORKSPACE
   || join(homedir(), ".openclaw/workspace");
 const MEMORY_MD  = join(WORKSPACE, "MEMORY.md");
 const AGENTS_MD  = join(WORKSPACE, "AGENTS.md");
 const MIND_MD    = join(WORKSPACE, "memory/MIND.md");
+const DRIFT_MD   = join(WORKSPACE, "memory/drift-patterns.md");
+const COMP_MD    = join(WORKSPACE, "memory/compensation-strategies.md");
 const HOT_CACHE  = join(WORKSPACE, "memory/HOT_CACHE.md");
 const MEMSEARCH  = join(homedir(), ".memsearch-venv/bin/memsearch");
 const LAST_INDEXED = join(homedir(), ".memsearch-venv/last-indexed");
@@ -23,7 +26,7 @@ const NOW = new Date().toISOString();
 const heals = [];
 
 // ── 1. MEMORY.md permanent pointer ────────────────────────────────────────────
-const POINTER = `<!-- permanent -->\nLong-term memory lives in MIND.md — query via memsearch when topics feel like they have history.`;
+const POINTER = `<!-- permanent -->\nLong-term memory lives in MIND.md, drift-patterns.md, and compensation-strategies.md — query via memsearch when topics feel like they have history.`;
 
 if (existsSync(MEMORY_MD)) {
   const content = readFileSync(MEMORY_MD, "utf8");
@@ -39,7 +42,7 @@ if (existsSync(MEMORY_MD)) {
 // ── 2. AGENTS.md discipline rule ──────────────────────────────────────────────
 const DISCIPLINE_RULE = `
 ## Long-Term Memory
-When a topic arises that feels like it has history — projects, people, decisions, patterns — query MIND.md via memsearch before responding:
+When a topic arises that feels like it has history — projects, people, decisions, patterns, drift signals, or compensation strategies — query the memory folder via memsearch before responding:
 \`\`\`
 ${MEMSEARCH} search "<topic>" --provider local
 \`\`\`
@@ -47,7 +50,7 @@ ${MEMSEARCH} search "<topic>" --provider local
 
 if (existsSync(AGENTS_MD)) {
   const content = readFileSync(AGENTS_MD, "utf8");
-  if (!content.includes("query MIND.md")) {
+  if (!content.includes("query the memory folder via memsearch")) {
     appendFileSync(AGENTS_MD, DISCIPLINE_RULE);
     heals.push("AGENTS.md discipline rule re-injected");
   }
@@ -106,6 +109,28 @@ if (!existsSync(MIND_MD)) {
   heals.push("MIND.md scaffolded");
 }
 
+if (!existsSync(DRIFT_MD)) {
+  writeFileSync(DRIFT_MD, `# DRIFT PATTERNS
+
+> Auto-generated. Recurring drift signals and coherence risks.
+> Queried on demand via memsearch when available.
+
+<!-- self-heal: scaffolded ${NOW} -->
+`);
+  heals.push("drift-patterns.md scaffolded");
+}
+
+if (!existsSync(COMP_MD)) {
+  writeFileSync(COMP_MD, `# COMPENSATION STRATEGIES
+
+> Auto-generated. Interventions that restore coherence when drift appears.
+> Queried on demand via memsearch when available.
+
+<!-- self-heal: scaffolded ${NOW} -->
+`);
+  heals.push("compensation-strategies.md scaffolded");
+}
+
 // ── 4. memsearch index ────────────────────────────────────────────────────────
 if (existsSync(MEMSEARCH)) {
   try {
@@ -114,16 +139,18 @@ if (existsSync(MEMSEARCH)) {
       lastIndexed = parseInt(readFileSync(LAST_INDEXED, "utf8").trim(), 10) || 0;
     }
 
-    const mindMtime = parseInt(
-      execSync(`stat -c %Y "${MIND_MD}"`).toString().trim(), 10
-    ) * 1000;
+    const latestMemoryMtime = Math.max(
+      existsSync(MIND_MD) ? parseInt(execSync(`stat -c %Y "${MIND_MD}"`).toString().trim(), 10) * 1000 : 0,
+      existsSync(DRIFT_MD) ? parseInt(execSync(`stat -c %Y "${DRIFT_MD}"`).toString().trim(), 10) * 1000 : 0,
+      existsSync(COMP_MD) ? parseInt(execSync(`stat -c %Y "${COMP_MD}"`).toString().trim(), 10) * 1000 : 0
+    );
 
-    if (mindMtime > lastIndexed) {
+    if (latestMemoryMtime > lastIndexed) {
       try { execSync("systemctl --user stop memsearch-watcher", { stdio: "pipe" }); } catch {}
       try {
         execSync(`"${MEMSEARCH}" index "${WORKSPACE}/memory" --provider local`, { stdio: "pipe" });
         writeFileSync(LAST_INDEXED, Date.now().toString());
-        heals.push("memsearch re-indexed MIND.md");
+        heals.push("memsearch re-indexed memory folder");
       } finally {
         try { execSync("systemctl --user start memsearch-watcher", { stdio: "pipe" }); } catch {}
       }

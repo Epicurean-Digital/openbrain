@@ -3,5 +3,27 @@
   "version": "0.1.0",
   "description": "Persistent memory, pattern learning, and context retrieval for OpenClaw agents",
   "type": "module",
-  "main": "index.js"
+  "main": "index.js",
+  "bin": {
+    "openbrain": "./cli.js"
+  },
+  "scripts": {
+    "longmemeval": "node scripts/longmemeval.js",
+    "eval:handoff": "node scripts/eval-handoff.js",
+    "recall": "node cli.js recall",
+    "ingest": "node cli.js ingest",
+    "codex:recall": "node scripts/codex-adapter.js recall",
+    "codex:extract": "node scripts/codex-adapter.js extract-session --latest",
+    "codex:ingest": "node scripts/codex-adapter.js ingest-session --latest",
+    "codex:hook:userpromptsubmit": "node scripts/codex-hooks.js userpromptsubmit",
+    "codex:hook:posttooluse": "node scripts/codex-hooks.js posttooluse",
+    "codex:hook:stop": "node scripts/codex-hooks.js stop",
+    "claude:hook:sessionstart": "node scripts/claude-hooks.js sessionstart",
+    "claude:hook:userpromptsubmit": "node scripts/claude-hooks.js userpromptsubmit",
+    "claude:hook:posttoolbatch": "node scripts/claude-hooks.js posttoolbatch",
+    "claude:hook:stop": "node scripts/claude-hooks.js stop",
+    "mcp": "node scripts/mcp-server.js",
+    "codex:ambient": "node scripts/codex-with-openbrain.js",
+    "codex:watch": "node scripts/codex-session-watcher.js"
+  }
 }

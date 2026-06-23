@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * decay.js
- * Applies time-based confidence decay to MIND.md entries.
+ * Applies utility-aware confidence decay to MIND.md entries.
  *
  * For each non-permanent entry:
- *   new_confidence = confidence × 0.5^(days_since_last_decay / half_life)
+ *   new_confidence = confidence × 0.5^(days_since_last_decay / effective_half_life)
  *
  * Half-lives: slow=180d  medium=60d  fast=14d  permanent=∞
  *
@@ -42,14 +42,69 @@ function getField(block, field) {
   return m ? m[1].trim() : null;
 }
 
+function clamp01(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function parseCount(raw) {
+  if (raw == null) return 0;
+  const text = String(raw).trim();
+  if (!text || text === "[]" || text === "none") return 0;
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) return Math.max(0, numeric);
+  if (text.startsWith("[") && text.endsWith("]")) {
+    const inner = text.slice(1, -1).trim();
+    if (!inner) return 0;
+    return inner.split(",").map(item => item.trim()).filter(Boolean).length;
+  }
+  return 1;
+}
+
+function parseUtilityScore(block, reinforced, trajectory) {
+  const raw = getField(block, "utility_score")
+    || getField(block, "utility")
+    || getField(block, "usefulness");
+
+  if (raw) {
+    const lowered = raw.toLowerCase();
+    if (lowered === "high") return 0.9;
+    if (lowered === "medium" || lowered === "med") return 0.65;
+    if (lowered === "low") return 0.35;
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) return clamp01(numeric > 1 ? numeric / 100 : numeric);
+  }
+
+  const reinforcementSignal = Math.log1p(Math.max(0, reinforced)) / Math.log1p(8);
+  const trajectoryBoost = /established/i.test(trajectory) ? 0.12 : /fading/i.test(trajectory) ? -0.12 : 0;
+  return clamp01(reinforcementSignal + trajectoryBoost);
+}
+
+function parseConflictCount(block) {
+  const raw = getField(block, "conflict_count")
+    || getField(block, "contradiction_count")
+    || getField(block, "contradictions")
+    || getField(block, "violations");
+  return parseCount(raw);
+}
+
+function adjustedHalfLife(baseHalfLife, utilityScore, conflictCount) {
+  const utilityBoost = 1 + (clamp01(utilityScore) * 0.8);
+  const conflictPenalty = 1 + (Math.max(0, conflictCount) * 0.45);
+  return Math.max(3, (baseHalfLife * utilityBoost) / conflictPenalty);
+}
+
 function applyDecay(block) {
   const decay = getField(block, "decay") || "slow";
   if (decay === "permanent") return { block, archived: false, changed: false };
 
   const confidence     = parseFloat(getField(block, "confidence") || "0.5");
+  const reinforced     = parseInt(getField(block, "reinforced") || getField(block, "reinforcement_count") || "1", 10);
   const trajectory     = getField(block, "trajectory") || "established";
   const lastReinforced = getField(block, "last_reinforced") || TODAY;
   const lastDecay      = getField(block, "last_decay_applied") || lastReinforced;
+  const utilityScore   = parseUtilityScore(block, Number.isFinite(reinforced) ? reinforced : 1, trajectory);
+  const conflictCount  = parseConflictCount(block);
 
   if (isNaN(confidence)) return { block, archived: false, changed: false };
 
@@ -57,7 +112,8 @@ function applyDecay(block) {
   if (days < 1) return { block, archived: false, changed: false };
 
   const h       = HALF_LIVES[decay] || 60;
-  const newConf = parseFloat((confidence * Math.pow(0.5, days / h)).toFixed(3));
+  const effectiveHalfLife = adjustedHalfLife(h, utilityScore, conflictCount);
+  const newConf = parseFloat((confidence * Math.pow(0.5, days / effectiveHalfLife)).toFixed(3));
 
   if (newConf < ARCHIVE_THRESHOLD) {
     return { block, archived: true, changed: false };
@@ -67,7 +123,7 @@ function applyDecay(block) {
 
   updated = updated.replace(/^(- confidence:\s*)[\d.]+$/m, `$1${newConf}`);
 
-  if (newConf < FADING_THRESHOLD && trajectory !== "fading") {
+  if ((newConf < FADING_THRESHOLD || (conflictCount > 0 && newConf < 0.45)) && trajectory !== "fading") {
     updated = updated.replace(/^(- trajectory:\s*)\w+$/m, "$1fading");
   }
 

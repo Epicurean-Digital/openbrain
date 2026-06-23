@@ -20,9 +20,80 @@
         "provider": { "type": "string" }
       }
     },
+    "coherenceCheck": {
+      "type": "object",
+      "properties": {
+        "enabled":  { "type": "boolean" },
+        "model":    { "type": "string" },
+        "provider": { "type": "string" },
+        "minChars": { "type": "number" }
+      }
+    },
     "workspace":                 { "type": "string" },
     "costWebhook":               { "type": "string" },
     "curationDebounceMinutes":   { "type": "number" },
-    "hotCacheSize":              { "type": "number" }
+    "hotCacheSize":              { "type": "number" },
+    "curateSubagents":           { "type": "boolean" },
+    "activeMemory": {
+      "type": "object",
+      "properties": {
+        "enabled":  { "type": "boolean" },
+        "maxChars": { "type": "number" }
+      }
+    },
+    "stableContext": {
+      "type": "object",
+      "properties": {
+        "enabled":  { "type": "boolean" },
+        "maxChars": { "type": "number" }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "maxChars": { "type": "number" }
+      }
+    },
+    "procedures": {
+      "type": "object",
+      "properties": {
+        "maxChars": { "type": "number" }
+      }
+    },
+    "openLoops": {
+      "type": "object",
+      "properties": {
+        "maxChars": { "type": "number" }
+      }
+    },
+    "retrieval": {
+      "type": "object",
+      "properties": {
+        "totalMaxChars": { "type": "number" }
+      }
+    },
+    "memsearch": {
+      "type": "object",
+      "properties": {
+        "enabled":  { "type": "boolean" },
+        "maxChars": { "type": "number" }
+      }
+    },
+    "autoscale": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clarificationTurns": { "type": "number" },
+        "correctionTurns": { "type": "number" }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "properties": {
+        "enabled":    { "type": "boolean" },
+        "webhook":    { "type": "string" },
+        "writeJsonl": { "type": "boolean" }
+      }
+    }
   }
 }

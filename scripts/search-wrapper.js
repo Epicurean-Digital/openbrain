@@ -14,6 +14,7 @@
 import { appendFileSync } from "node:fs";
 import { join }           from "node:path";
 import { spawnSync }      from "node:child_process";
+import { homedir }        from "node:os";
 
 const HOME       = homedir();
 const WORKSPACE  = process.env.OPENBRAIN_WORKSPACE || join(HOME, ".openclaw/workspace");
