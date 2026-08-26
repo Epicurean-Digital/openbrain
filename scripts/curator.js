@@ -63,10 +63,41 @@ const DEEPSEEK_KEY  = process.env.DEEPSEEK_API_KEY || (() => {
   } catch { return null; }
 })();
 
+// Reads a single KEY=VALUE from a .env-style file, so a key can be sourced
+// without exporting an environment variable. Leading ~/ is expanded to $HOME.
+function readEnvValue(file, key) {
+  try {
+    const resolved = file.startsWith("~/") ? join(homedir(), file.slice(2)) : file;
+    for (const line of readFileSync(resolved, "utf8").split("\n")) {
+      const eq = line.indexOf("=");
+      if (eq === -1) continue;
+      if (line.slice(0, eq).trim() !== key) continue;
+      return line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    }
+  } catch {}
+  return null;
+}
+
+// Optional local config (gitignored): { curator_provider, curator_model, openai_api_key_file }.
+const LOCAL_CONFIG = (() => {
+  try {
+    return JSON.parse(readFileSync(join(import.meta.dirname, "..", "config.json"), "utf8"));
+  } catch { return {}; }
+})();
+
+const OPENAI_KEY = process.env.OPENAI_API_KEY
+  || (LOCAL_CONFIG.openai_api_key_file
+    ? readEnvValue(LOCAL_CONFIG.openai_api_key_file, "OPENAI_API_KEY")
+    : null);
+
 const CURATOR_PROVIDER = process.env.OPENBRAIN_CURATOR_PROVIDER
-  || (DEEPSEEK_KEY ? "deepseek" : "anthropic");
+  || LOCAL_CONFIG.curator_provider
+  || (OPENAI_KEY ? "openai" : DEEPSEEK_KEY ? "deepseek" : "anthropic");
 const CURATOR_MODEL = process.env.OPENBRAIN_CURATOR_MODEL
-  || (CURATOR_PROVIDER === "deepseek" ? "deepseek-reasoner" : "claude-sonnet-4-6");
+  || LOCAL_CONFIG.curator_model
+  || (CURATOR_PROVIDER === "openai"   ? "gpt-4o-mini"
+    : CURATOR_PROVIDER === "deepseek" ? "deepseek-reasoner"
+    : "claude-sonnet-4-6");
 
 const FALLBACK_MODEL = "claude-sonnet-4-6";
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -200,7 +231,39 @@ async function callDeepSeek(system, userMessage) {
   return { content: msg.content, reasoningContent: msg.reasoning_content || null };
 }
 
+async function callOpenAI(system, userMessage) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${OPENAI_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: CURATOR_MODEL,
+      max_completion_tokens: 8192,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userMessage },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenAI API error ${res.status}: ${err}`);
+  }
+  const data = await res.json();
+  const msg  = data.choices[0].message;
+  if (data.usage) {
+    console.log(`[curator] openai usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
+  }
+  return { content: msg.content, reasoningContent: msg.reasoning_content || null };
+}
+
 async function callCurator(system, userMessage) {
+  if (CURATOR_PROVIDER === "openai" && OPENAI_KEY) {
+    console.log(`[curator] calling ${CURATOR_MODEL} (openai) for curation...`);
+    return callOpenAI(system, userMessage);
+  }
   if (CURATOR_PROVIDER === "deepseek" && DEEPSEEK_KEY) {
     console.log(`[curator] calling ${CURATOR_MODEL} (deepseek) for curation...`);
     return callDeepSeek(system, userMessage);
@@ -250,18 +313,40 @@ function selectRelevantBlocks(content, seedText, maxBlocks = 6, maxChars = 2600)
   return combined.length > maxChars ? combined.slice(0, maxChars) : combined;
 }
 
-function loadRecentCandidateFiles(limit = 24) {
-  if (!existsSync(CANDIDATES_DIR)) return [];
+// Candidates are staged per runtime under memory/private/<runtime>/<agent>/candidates.
+// The legacy flat memory/candidates dir is included for backward compatibility.
+function candidateDirs() {
+  const dirs = [];
+  if (existsSync(CANDIDATES_DIR)) dirs.push(CANDIDATES_DIR);
+  if (existsSync(PRIVATE_MEMORY_ROOT)) {
+    for (const runtime of readdirSync(PRIVATE_MEMORY_ROOT)) {
+      const runtimeDir = join(PRIVATE_MEMORY_ROOT, runtime);
+      try { if (!statSync(runtimeDir).isDirectory()) continue; } catch { continue; }
+      for (const agent of readdirSync(runtimeDir)) {
+        const dir = join(runtimeDir, agent, "candidates");
+        if (existsSync(dir)) dirs.push(dir);
+      }
+    }
+  }
+  return dirs;
+}
 
-  return readdirSync(CANDIDATES_DIR)
-    .filter(name => name.endsWith(".json"))
-    .map(name => ({
-      name,
-      path: join(CANDIDATES_DIR, name),
-      mtimeMs: statSync(join(CANDIDATES_DIR, name)).mtimeMs,
-    }))
-    .sort((a, b) => a.mtimeMs - b.mtimeMs)
-    .slice(-limit);
+function loadRecentCandidateFiles(limit = 24) {
+  const all = [];
+  for (const dir of candidateDirs()) {
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".json")) continue;
+      const path = join(dir, name);
+      let mtimeMs;
+      try {
+        const st = statSync(path);
+        if (!st.isFile()) continue;
+        mtimeMs = st.mtimeMs;
+      } catch { continue; }
+      all.push({ name, path, dir, mtimeMs });
+    }
+  }
+  return all.sort((a, b) => a.mtimeMs - b.mtimeMs).slice(-limit);
 }
 
 function parseCandidateFiles(files) {
@@ -331,9 +416,10 @@ function buildCandidatePromotionInput(payloads) {
 
 function archiveCandidateFiles(payloads) {
   if (payloads.length === 0) return;
-  mkdirSync(PROCESSED_CANDIDATES_DIR, { recursive: true });
   for (const { file } of payloads) {
-    const target = join(PROCESSED_CANDIDATES_DIR, `${Date.now()}-${safeSlug(file.name, "candidate")}.json`);
+    const destDir = join(file.dir || CANDIDATES_DIR, "processed");
+    mkdirSync(destDir, { recursive: true });
+    const target = join(destDir, `${Date.now()}-${safeSlug(file.name, "candidate")}.json`);
     try { renameSync(file.path, target); } catch {}
   }
 }
@@ -1423,17 +1509,21 @@ ${traceSummary}${reasoningTrace.length > 2000 ? "\n...[truncated]" : ""}
   emitExplicitSharedArtifacts(normalizedPayloads);
   archiveCandidateFiles(payloads);
   await promoteGraduates();
-  await runScript(join(import.meta.dirname, "decay.js"));
-  await runScript(join(import.meta.dirname, "hot-cache.js"));
-  await runScript(join(import.meta.dirname, "self-heal.js"));
+  // In bulk-drain mode the caller runs decay/hot-cache/self-heal once at the end,
+  // rather than paying the memsearch re-index cost on every 24-candidate batch.
+  if (process.env.OPENBRAIN_BULK !== "1") {
+    await runScript(join(import.meta.dirname, "decay.js"));
+    await runScript(join(import.meta.dirname, "hot-cache.js"));
+    await runScript(join(import.meta.dirname, "self-heal.js"));
+  }
   console.log("[curator] candidate promotion done");
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 async function main() {
   normalizeSpecializedFiles();
-  if (!ANTHROPIC_KEY && !DEEPSEEK_KEY) {
-    console.error("[curator] no API key available (ANTHROPIC_API_KEY or DEEPSEEK_API_KEY required) — aborting");
+  if (!ANTHROPIC_KEY && !DEEPSEEK_KEY && !OPENAI_KEY) {
+    console.error("[curator] no API key available (OPENAI_API_KEY, ANTHROPIC_API_KEY, or DEEPSEEK_API_KEY required) — aborting");
     process.exit(1);
   }
 
